@@ -1,15 +1,19 @@
-import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
+import {
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Alert, StyleSheet, Text, View} from 'react-native';
 import Exercise from './Exercise';
 import {fakeApi, IExercise, UpdateExercisePayload} from './fakeApi';
+import {useQueuedMutation} from './useQueueMutations';
 
 const ExercisesPage = () => {
   const {data: fetchedExercises} = useQuery({
     queryKey: ['exercises'],
     queryFn: () => fakeApi.getTodos(),
     staleTime: Infinity,
-    cacheTime: Infinity,
   });
 
   const updateLocalExerciseList = (
@@ -33,26 +37,43 @@ const ExercisesPage = () => {
 
   const queryClient = useQueryClient();
 
-  const updateExercise = useMutation({
+  const updateExercise = useQueuedMutation({
     mutationKey: ['exercises'],
-    mutationFn: async (payload: UpdateExercisePayload) =>
-      fakeApi.updateExerciseStatus(payload.id, payload.isDone),
-    onSuccess(data) {
+    scope: {
+      id: 'exercises',
+    },
+    mutationFn: async (payload: UpdateExercisePayload) => {
+      return await fakeApi.updateExerciseStatus(payload.id, payload.isDone);
+    },
+    onSuccess: data => {
+      Alert.alert('Exercise updated: ' + data.id);
       updateLocalExerciseList(data.id, data.isDone, false);
     },
     onMutate: async (payload: UpdateExercisePayload) => {
-      await queryClient.cancelQueries(['exercises']);
+      await queryClient.cancelQueries({queryKey: ['exercises']});
       updateLocalExerciseList(payload.id, payload.isDone, true);
     },
   });
 
+  const pendingMutations = useMutationState({
+    filters: {
+      predicate: mutation =>
+        mutation.state.status === 'idle' || mutation.state.status === 'pending',
+    },
+    select: mutation => mutation.state.variables,
+  });
   return (
     <View style={styles.container}>
-      <Text style={styles.screenTitle}>Exercises</Text>
+      <Text style={styles.screenTitle}>
+        Exercises {pendingMutations.length}
+      </Text>
       {fetchedExercises?.map(exercise => (
         <Exercise
           onButtonPress={() =>
-            updateExercise.mutate({id: exercise.id, isDone: !exercise.isDone})
+            updateExercise.queue({
+              id: exercise.id,
+              isDone: !exercise.isDone,
+            })
           }
           key={exercise.id}
           exercise={exercise}

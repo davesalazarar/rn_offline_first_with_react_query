@@ -63,6 +63,6 @@ export const fakeApi = {
 
           resolve(updatedExercise);
         }
-      }, 300);
+      }, 1000);
     }),
 };
